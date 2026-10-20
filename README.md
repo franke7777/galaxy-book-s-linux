@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner.svg" alt="Linux on the Samsung Galaxy Book S (Intel Lakefield)" width="100%"></p>
+
 # Arch Linux on the Samsung Galaxy Book S (Intel Lakefield)
 
 Patches, services and notes to run Arch Linux from the **internal eUFS** of the Samsung Galaxy Book S with the Intel Lakefield CPU (model **NP767XCM / 767XCL / SM-W767**, Core i5-L16G7). Almost nothing on this laptop works with a stock kernel. With the pieces in this repository nearly everything does, except the camera.
