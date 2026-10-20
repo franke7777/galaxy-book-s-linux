@@ -8,6 +8,16 @@ Everything here was developed and tested on one device with Arch Linux, kernel `
 
 > **Read the [disclaimer](#disclaimer) first.** The root file system lives on the eUFS, and the eUFS only works with a patched driver. A kernel update without the patched module means a system that does not boot. Keep a live stick around.
 
+## The story
+
+This started in August 2026 with a simple question: can this little laptop run Linux at all? The first answer was "barely". Fedora booted from an external SSD, but with software rendering only, no battery reading, no sound, no brightness control and an internal disk that hung on every boot.
+
+Over the next weeks it turned into a long puzzle, one piece at a time. The internal eUFS only became stable after capping its link at HS-G3. The battery turned out to hide behind the Integrated Sensor Hub. The GPU renders fine once i915 treats it as an Elkhart Lake chip and leaves the display alone. The speakers stayed silent until a single codec register, found by emulating the Windows Realtek driver, released the amplifiers from reset. The lid switch is a sensor that nobody listens to by default. Every one of these took evenings of reading ACPI tables, kernel source and Windows driver packages, plenty of dead ends and more than a few hard reboots.
+
+In October Windows was wiped and Arch Linux moved onto the internal disk for good. Since then this is a daily driver: suspend, hibernate, sound, microphone, keyboard light, brightness and hardware video decoding all work. The camera is the one piece that refused to cooperate, and its notes are here too, so nobody has to start from zero.
+
+It was a lot of work, and honestly a lot of fun. If you own a Galaxy Book S and this helps you, that makes it even better.
+
 ## Status
 
 | Component | Status | How | Details |
