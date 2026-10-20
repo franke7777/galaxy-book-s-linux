@@ -1,0 +1,20 @@
+#!/usr/bin/python3 -I
+# /usr/lib/systemd/system-sleep/books-backlight
+# Backlight off during suspend. Without an i915 display nobody turns the PWM off, so the
+# backlight kept running behind the closed lid (measured ~0.9 W at medium brightness).
+# Writes the register directly instead of using the FIFO: books-backlightd may not get to run
+# before the freeze. After resume the exact old value is restored, so the daemon's state stays right.
+import ctypes, mmap, os, sys
+
+DUTY = 0xC8258
+SAVE = "/run/books-backlight/sleep-duty"
+fd = os.open("/sys/bus/pci/devices/0000:00:02.0/resource0", os.O_RDWR | os.O_SYNC)
+reg = ctypes.c_uint32.from_buffer(mmap.mmap(fd, 0x100000), DUTY)
+
+if sys.argv[1] == "pre":
+    with open(SAVE, "w") as f:
+        f.write(str(reg.value))
+    reg.value = 0
+elif sys.argv[1] == "post" and os.path.exists(SAVE):
+    reg.value = int(open(SAVE).read())
+    os.remove(SAVE)

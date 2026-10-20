@@ -1,0 +1,25 @@
+--- a/drivers/ufs/host/ufshcd-pci.c
++++ b/drivers/ufs/host/ufshcd-pci.c
+@@ -153,6 +153,11 @@
+ 	return ret;
+ }
+ 
++/* Galaxy Book S (767XCL): the LKF link breaks in HS-G4 under load, G3 is stable */
++static unsigned int lkf_max_gear = 3;
++module_param(lkf_max_gear, uint, 0444);
++MODULE_PARM_DESC(lkf_max_gear, "LKF: max HS gear (0 = no limit, default 3)");
++
+ static int ufs_intel_lkf_pwr_change_notify(struct ufs_hba *hba,
+ 				enum ufs_notify_change_status status,
+ 				struct ufs_pa_layer_attr *dev_req_params)
+@@ -164,6 +169,10 @@
+ 		if (ufshcd_is_hs_mode(dev_req_params) &&
+ 		    (hba->pwr_info.lane_rx != 2 || hba->pwr_info.lane_tx != 2))
+ 			ufs_intel_set_lanes(hba, 2);
++		if (ufshcd_is_hs_mode(dev_req_params) && lkf_max_gear) {
++			dev_req_params->gear_rx = min(dev_req_params->gear_rx, lkf_max_gear);
++			dev_req_params->gear_tx = min(dev_req_params->gear_tx, lkf_max_gear);
++		}
+ 		break;
+ 	case POST_CHANGE:
+ 		if (ufshcd_is_hs_mode(dev_req_params)) {

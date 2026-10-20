@@ -1,0 +1,456 @@
+From: Cai Yu <caiyu7372@gmail.com>
+Date: Sat, 26 Sep 2026 07:40:40 +0800
+Subject: [PATCH 15/18] Bluetooth: hci_intel: fix tty-only assumptions in the
+ LPM paths
+
+The LPM support of this driver looks up the platform device that provides
+the reset GPIO by comparing the parent of hu->tty->dev.  That tty device
+does not exist for controllers attached through serdev: hu->tty is NULL
+and four code paths dereference it unconditionally, so binding such a
+controller would crash.
+
+Add the missing NULL checks and use serdev_device_set_baudrate() in
+intel_set_baudrate() when the controller is a serdev device.  The LPM
+transactions are skipped for those controllers: they own their reset GPIO
+and have no host-wake IRQ.
+
+This is a preparation for adding serdev support to this driver, selected
+with CONFIG_SERIAL_DEV_BUS; no tty-based setup changes behaviour.
+
+Signed-off-by: Cai Yu <caiyu7372@gmail.com>
+---
+ drivers/bluetooth/hci_intel.c | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/bluetooth/hci_intel.c b/drivers/bluetooth/hci_intel.c
+index d10ce7a0ba3e..28c11dd04a74 100644
+--- a/drivers/bluetooth/hci_intel.c
++++ b/drivers/bluetooth/hci_intel.c
+@@ -14,6 +14,7 @@
+ #include <linux/wait.h>
+ #include <linux/tty.h>
+ #include <linux/platform_device.h>
++#include <linux/serdev.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/acpi.h>
+ #include <linux/interrupt.h>
+@@ -288,7 +289,11 @@ static int intel_set_power(struct hci_uart *hu, bool powered)
+ 	struct intel_device *idev;
+ 	int err = -ENODEV;
+ 
+-	if (!hu->tty->dev)
++	/* Controllers attached through serdev have no tty device; the platform
++	 * device providing the reset GPIO and LPM support is matched through
++	 * the tty device, so there is nothing to do for them.
++	 */
++	if (!hu->tty || !hu->tty->dev)
+ 		return err;
+ 
+ 	mutex_lock(&intel_device_list_lock);
+@@ -361,7 +366,7 @@ static void intel_busy_work(struct work_struct *work)
+ 						busy_work);
+ 	struct intel_device *idev;
+ 
+-	if (!intel->hu->tty->dev)
++	if (!intel->hu->tty || !intel->hu->tty->dev)
+ 		return;
+ 
+ 	/* Link is busy, delay the suspend */
+@@ -511,7 +516,10 @@ static int intel_set_baudrate(struct hci_uart *hu, unsigned int speed)
+ 	/* wait 100ms to change baudrate on controller side */
+ 	msleep(100);
+ 
+-	hci_uart_set_baudrate(hu, speed);
++	if (hu->serdev)
++		serdev_device_set_baudrate(hu->serdev, speed);
++	else
++		hci_uart_set_baudrate(hu, speed);
+ 	hci_uart_set_flow_control(hu, false);
+ 
+ 	return 0;
+@@ -828,7 +836,7 @@ static int intel_setup(struct hci_uart *hu)
+ 	 */
+ 	mutex_lock(&intel_device_list_lock);
+ 	list_for_each_entry(idev, &intel_device_list, list) {
+-		if (!hu->tty->dev)
++		if (!hu->tty || !hu->tty->dev)
+ 			break;
+ 		if (hu->tty->dev->parent == idev->pdev->dev.parent) {
+ 			if (device_may_wakeup(&idev->pdev->dev)) {
+@@ -990,7 +998,7 @@ static int intel_enqueue(struct hci_uart *hu, struct sk_buff *skb)
+ 
+ 	BT_DBG("hu %p skb %p", hu, skb);
+ 
+-	if (!hu->tty->dev)
++	if (!hu->tty || !hu->tty->dev)
+ 		goto out_enqueue;
+ 
+ 	/* Be sure our controller is resumed and potential LPM transaction
+
+From 563655c937cf62a1ad78b389c29dcd87568c867e Mon Sep 17 00:00:00 2001
+From: Cai Yu <caiyu7372@gmail.com>
+Date: Sat, 26 Sep 2026 07:40:41 +0800
+Subject: [PATCH 16/18] Bluetooth: hci_intel: add the CcP controller (hardware
+ variant 0x14)
+
+The Intel CcP controller (hardware variant 0x14) is used on the
+Lakefield and Jasper Lake platforms.  btintel_get_fw_name() in btintel.c
+already knows it and builds the same three-part firmware name as for
+ThP/JfP/HcP (intel/ibt-<hw_variant>-<hw_revision>-<fw_revision>), but
+hci_intel.c duplicates that lookup and rejects the variant before the
+firmware is requested:
+
+  Bluetooth: hci0: Unsupported Intel hardware variant (20)
+
+Add 0x14 to the variant check and to both firmware name switches.
+
+Tested on a Lenovo ThinkPad X1 Fold Gen1 (Lakefield, ACPI INT33E4):
+intel/ibt-20-1-3.sfi is requested and the DDC parameters are applied.
+
+Signed-off-by: Cai Yu <caiyu7372@gmail.com>
+---
+ drivers/bluetooth/hci_intel.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/bluetooth/hci_intel.c b/drivers/bluetooth/hci_intel.c
+index 28c11dd04a74..d25d029b1c1e 100644
+--- a/drivers/bluetooth/hci_intel.c
++++ b/drivers/bluetooth/hci_intel.c
+@@ -606,6 +606,7 @@ static int intel_setup(struct hci_uart *hu)
+ 	case 0x0b:	/* LnP */
+ 	case 0x0c:	/* WsP */
+ 	case 0x12:	/* ThP */
++	case 0x14:	/* CcP */
+ 		break;
+ 	default:
+ 		bt_dev_err(hdev, "Unsupported Intel hardware variant (%u)",
+@@ -695,6 +696,7 @@ static int intel_setup(struct hci_uart *hu)
+ 			 ver.hw_variant, le16_to_cpu(params.dev_revid));
+ 		break;
+ 	case 0x12:      /* ThP */
++	case 0x14:      /* CcP */
+ 		snprintf(fwname, sizeof(fwname), "intel/ibt-%u-%u-%u.sfi",
+ 			 ver.hw_variant, ver.hw_revision, ver.fw_revision);
+ 		break;
+@@ -721,6 +723,7 @@ static int intel_setup(struct hci_uart *hu)
+ 			 ver.hw_variant, le16_to_cpu(params.dev_revid));
+ 		break;
+ 	case 0x12:      /* ThP */
++	case 0x14:      /* CcP */
+ 		snprintf(fwname, sizeof(fwname), "intel/ibt-%u-%u-%u.ddc",
+ 			 ver.hw_variant, ver.hw_revision, ver.fw_revision);
+ 		break;
+
+From eb86ed80b38d5acef382a1a963c132997760567d Mon Sep 17 00:00:00 2001
+From: Cai Yu <caiyu7372@gmail.com>
+Date: Sat, 26 Sep 2026 07:40:42 +0800
+Subject: [PATCH 17/18] Bluetooth: hci_intel: add serdev support for the CcP
+ controller
+
+The Intel Bluetooth controller on the ThinkPad X1 Fold Gen1 (Lakefield,
+ACPI INT33E4) is described as a serdev child of its LPSS UART: the port
+has no tty device at all, so the line discipline path of this driver can
+never be used and nothing binds to the controller today.
+
+Add a serdev driver next to the platform driver, in the same way hci_bcm
+supports controllers of both kinds:
+
+ - the ACPI id INT33E4 is matched in a separate table, so the platform
+   driver keeps its INT33E1/INT33E3 set;
+ - the probe power cycles the controller through the "reset" GPIO (it
+   does not keep the firmware across a power cycle, and this also clears
+   a controller left in an unknown state) and waits for the bootloader to
+   come up before the first command.  On this board 500 ms of reset pulse
+   plus 2 s of boot delay are needed, otherwise the first command is lost;
+ - this UART is described with FlowControlHardware, so the serial core
+   enables CTS/RTS.  The Intel handshake has to transmit freely before
+   the controller answers, so flow control is turned off;
+ - the serdev path uses a protocol struct with oper_speed = 0.  The
+   generic baudrate change in hci_serdev.c runs before intel_setup(), but
+   the controller is in bootloader mode at that point: it only answers at
+   init_speed until the firmware has been downloaded, and it is not even
+   listening yet right after the reset pulse.  Switching the host to
+   oper_speed there makes the setup fail with a -110 timeout on the
+   version read; intel_setup() changes the baudrate itself.
+
+Tested on a Lenovo ThinkPad X1 Fold Gen1 (20RKA000CD): the controller
+comes up as hci0, the Intel firmware is downloaded, the DDC parameters
+are applied and the (sole) HOG keyboard connects.
+
+Signed-off-by: Cai Yu <caiyu7372@gmail.com>
+---
+ drivers/bluetooth/hci_intel.c | 132 +++++++++++++++++++++++++++++++++-
+ 1 file changed, 131 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/bluetooth/hci_intel.c b/drivers/bluetooth/hci_intel.c
+index d25d029b1c1e..5926d1f5ab56 100644
+--- a/drivers/bluetooth/hci_intel.c
++++ b/drivers/bluetooth/hci_intel.c
+@@ -544,6 +544,14 @@ static int intel_setup(struct hci_uart *hu)
+ 
+ 	bt_dev_dbg(hdev, "");
+ 
++	/* ACPI describes the UART of this controller with FlowControlHardware,
++	 * so the serial core enables CTS/RTS.  The Intel handshake has to
++	 * transmit freely at init_speed before the controller starts answering,
++	 * otherwise the first commands time out; keep flow control off.
++	 */
++	if (hu->serdev)
++		serdev_device_set_flow_control(hu->serdev, false);
++
+ 	hu->hdev->set_diag = btintel_set_diag;
+ 	hu->hdev->set_bdaddr = btintel_set_bdaddr;
+ 
+@@ -1067,6 +1075,33 @@ static const struct hci_uart_proto intel_proto = {
+ 	.dequeue	= intel_dequeue,
+ };
+ 
++/* Do not let the generic baudrate change in hci_serdev.c run for this path.
++ *
++ * It is executed before intel_setup() (and right after the controller has been
++ * power cycled by the probe), but the controller is still in bootloader mode at
++ * that point: it only answers at init_speed until the firmware has been
++ * downloaded, and it needs a few seconds after the reset pulse before it
++ * answers at all.  Switching the host to oper_speed while the controller is
++ * silent leaves the two sides at different baudrates and the setup never
++ * recovers.  intel_setup() changes the baudrate itself, once the bootloader is
++ * talking.
++ */
++static const struct hci_uart_proto intel_serdev_proto = {
++	.id		= HCI_UART_INTEL,
++	.name		= "Intel",
++	.manufacturer	= 2,
++	.init_speed	= 115200,
++	.oper_speed	= 0,
++	.open		= intel_open,
++	.close		= intel_close,
++	.flush		= intel_flush,
++	.setup		= intel_setup,
++	.set_baudrate	= intel_set_baudrate,
++	.recv		= intel_recv,
++	.enqueue	= intel_enqueue,
++	.dequeue	= intel_dequeue,
++};
++
+ #ifdef CONFIG_ACPI
+ static const struct acpi_device_id intel_acpi_match[] = {
+ 	{ .id = "INT33E1" },
+@@ -1074,6 +1109,16 @@ static const struct acpi_device_id intel_acpi_match[] = {
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(acpi, intel_acpi_match);
++
++/* Controllers which the firmware describes as a serdev child of their UART
++ * instead of as an LPSS platform device.  The CcP controller (Lakefield,
++ * Jasper Lake) is one of them.
++ */
++static const struct acpi_device_id intel_serdev_acpi_match[] = {
++	{ .id = "INT33E4" },
++	{ }
++};
++MODULE_DEVICE_TABLE(acpi, intel_serdev_acpi_match);
+ #endif
+ 
+ static int intel_suspend_device(struct device *dev)
+@@ -1217,6 +1262,67 @@ static struct platform_driver intel_driver = {
+ 	},
+ };
+ 
++#ifdef CONFIG_ACPI
++/* The controller does not keep the firmware across a power cycle, so it starts
++ * in bootloader mode every time; power cycling it here also makes sure a
++ * controller left in an unknown state by a previous boot cannot break the
++ * setup.  Measured on the ThinkPad X1 Fold Gen1: 500 ms of reset pulse, then
++ * 2 s until the bootloader answers the first command.
++ */
++#define INTEL_RESET_PULSE_MS	500
++#define INTEL_BOOT_DELAY_MS	2000
++
++static int intel_serdev_probe(struct serdev_device *serdev)
++{
++	struct hci_uart *hu;
++	struct gpio_desc *reset;
++
++	hu = devm_kzalloc(&serdev->dev, sizeof(*hu), GFP_KERNEL);
++	if (!hu)
++		return -ENOMEM;
++
++	hu->serdev = serdev;
++
++	/* The port is not open yet (hci_uart_register_device() opens it), so
++	 * only the ACPI properties and the reset GPIO can be used here.
++	 */
++	if (devm_acpi_dev_add_driver_gpios(&serdev->dev, acpi_hci_intel_gpios))
++		dev_dbg(&serdev->dev, "No ACPI GPIO mapping table\n");
++
++	reset = devm_gpiod_get_optional(&serdev->dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(reset))
++		return dev_err_probe(&serdev->dev, PTR_ERR(reset),
++				     "Unable to retrieve reset gpio\n");
++
++	if (reset) {
++		gpiod_set_value_cansleep(reset, 0);
++		msleep(INTEL_RESET_PULSE_MS);
++		gpiod_set_value_cansleep(reset, 1);
++		msleep(INTEL_BOOT_DELAY_MS);
++	} else {
++		dev_warn(&serdev->dev, "No reset gpio, relying on the firmware state\n");
++	}
++
++	return hci_uart_register_device(hu, &intel_serdev_proto);
++}
++
++static void intel_serdev_remove(struct serdev_device *serdev)
++{
++	struct hci_uart *hu = serdev_device_get_drvdata(serdev);
++
++	hci_uart_unregister_device(hu);
++}
++
++static struct serdev_device_driver intel_serdev_driver = {
++	.probe = intel_serdev_probe,
++	.remove = intel_serdev_remove,
++	.driver = {
++		.name = "hci_uart_intel",
++		.acpi_match_table = ACPI_PTR(intel_serdev_acpi_match),
++	},
++};
++#endif
++
+ int __init intel_init(void)
+ {
+ 	int err;
+@@ -1225,12 +1331,36 @@ int __init intel_init(void)
+ 	if (err)
+ 		return err;
+ 
++#ifdef CONFIG_ACPI
++	err = serdev_device_driver_register(&intel_serdev_driver);
++	if (err)
++		goto err_platform;
++
++	err = hci_uart_register_proto(&intel_proto);
++	if (err)
++		goto err_serdev;
++
++	return 0;
++
++err_serdev:
++	serdev_device_driver_unregister(&intel_serdev_driver);
++err_platform:
++	platform_driver_unregister(&intel_driver);
++	return err;
++#else
+ 	return hci_uart_register_proto(&intel_proto);
++#endif
+ }
+ 
+ int __exit intel_deinit(void)
+ {
++	hci_uart_unregister_proto(&intel_proto);
++
++#ifdef CONFIG_ACPI
++	serdev_device_driver_unregister(&intel_serdev_driver);
++#endif
++
+ 	platform_driver_unregister(&intel_driver);
+ 
+-	return hci_uart_unregister_proto(&intel_proto);
++	return 0;
+ }
+
+From b2fa9f1e2fdcdd259b10442c90352625a31e4c51 Mon Sep 17 00:00:00 2001
+From: Cai Yu <caiyu7372@gmail.com>
+Date: Sat, 26 Sep 2026 07:40:43 +0800
+Subject: [PATCH 18/18] Bluetooth: hci_intel: download the CcP firmware at
+ 921.6 kbaud
+
+The CcP bootloader stops acknowledging firmware fragments when the image
+is transferred at the operating speed of the driver (3 Mbaud): on a
+ThinkPad X1 Fold Gen1 the 801 KB image aborts with a "command 0xfc09 tx
+timeout" after ~4 s at 2 and at 3 Mbaud (3 Mbaud completed only 3 out of
+11 boots), while 921.6 kbaud completed on every boot in 12.5 s (115.2
+kbaud needs 83 s).
+
+This is not a baudrate mismatch: the host divisor is exact for all of
+these rates (verified through the clock framework and the dw8250 divisor
+helpers) and short commands are answered correctly at 2 and 3 Mbaud - the
+link loses a frame on long transfers.
+
+Switch to 921.6 kbaud for the download and restore init_speed before the
+firmware is started, which is where the operational firmware expects to
+be: this controller does not follow a vendor speed change once its
+firmware is running.
+
+Speed measurements for the same controller and image:
+ 115200 -> 83 s   230400 -> 43 s   921600 -> 12.5 s (5/5)
+ 2000000 -> aborts immediately   3000000 -> 3/11
+
+Signed-off-by: Cai Yu <caiyu7372@gmail.com>
+---
+ drivers/bluetooth/hci_intel.c | 31 ++++++++++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/bluetooth/hci_intel.c b/drivers/bluetooth/hci_intel.c
+index 5926d1f5ab56..41f8e1a242c6 100644
+--- a/drivers/bluetooth/hci_intel.c
++++ b/drivers/bluetooth/hci_intel.c
+@@ -36,6 +36,11 @@
+ #define STATE_SUSPENDED		7
+ #define STATE_LPM_TRANSACTION	8
+ 
++/* The CcP bootloader cannot transfer the firmware image at the rates the
++ * driver uses for the operating mode: see the comment in intel_setup().
++ */
++#define INTEL_CCP_DOWNLOAD_SPEED	921600
++
+ #define HCI_LPM_WAKE_PKT 0xf0
+ #define HCI_LPM_PKT 0xf1
+ #define HCI_LPM_MAX_SIZE 10
+@@ -539,6 +544,7 @@ static int intel_setup(struct hci_uart *hu)
+ 	ktime_t calltime, delta, rettime;
+ 	unsigned long long duration;
+ 	unsigned int init_speed, oper_speed;
++	bool download_speed_change = false;
+ 	int speed_change = 0;
+ 	int err;
+ 
+@@ -652,6 +658,29 @@ static int intel_setup(struct hci_uart *hu)
+ 		return -ENODEV;
+ 	}
+ 
++	/* The controller starts in bootloader mode and does not keep its
++	 * firmware across a power cycle, so the image has to be downloaded on
++	 * every boot.  This bootloader stops acknowledging firmware fragments
++	 * when the transfer runs at the operating speed of the driver: on the
++	 * ThinkPad X1 Fold Gen1 the 801 KB image aborts with a "command 0xfc09
++	 * tx timeout" after ~4 s at 2 and at 3 Mbaud (3 Mbaud completed only 3
++	 * out of 11 boots), while 921.6 kbaud completed on every boot in 12.5 s
++	 * and 115.2 kbaud needs 83 s.  Short commands at the same speeds are
++	 * answered correctly, so this is not a baudrate mismatch - the link
++	 * loses a frame on long transfers.
++	 *
++	 * Use 921.6 kbaud for the download and restore init_speed before the
++	 * firmware is started: this controller does not follow a vendor speed
++	 * change once its firmware is running.
++	 */
++	if (hu->serdev && ver.hw_variant == 0x14) {
++		err = intel_set_baudrate(hu, INTEL_CCP_DOWNLOAD_SPEED);
++		if (err)
++			return err;
++
++		download_speed_change = true;
++	}
++
+ 	/* Read the secure boot parameters to identify the operating
+ 	 * details of the bootloader.
+ 	 */
+@@ -807,7 +836,7 @@ static int intel_setup(struct hci_uart *hu)
+ 		return err;
+ 
+ 	/* We need to restore the default speed before Intel reset */
+-	if (speed_change) {
++	if (speed_change || download_speed_change) {
+ 		err = intel_set_baudrate(hu, init_speed);
+ 		if (err)
+ 			return err;

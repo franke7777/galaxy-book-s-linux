@@ -1,0 +1,7 @@
+#!/bin/sh
+# /usr/lib/systemd/system-sleep/books-amp
+# Re-initialise the amplifiers after resume (the codec may be reset during suspend).
+# Do not wait here: while a sleep hook runs, systemd keeps user.slice frozen
+# (a blocking hook caused a 10 s frozen screen after opening the lid).
+[ "$1" = post ] && systemctl --no-block restart books-amp.service
+exit 0

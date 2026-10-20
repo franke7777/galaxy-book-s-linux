@@ -1,0 +1,13 @@
+#!/bin/sh
+# Set the built-in microphone (AVS DMIC) to +18 dB (volume 2.0, override with MIC_GAIN).
+# The node name changes between boots (avs_dmic.3, avs_dmic.5 ...), so WirePlumber does not
+# reliably remember the value. Run from the Sway config: exec ~/.local/bin/books-mic-gain
+GAIN=${MIC_GAIN:-2.0}
+for i in $(seq 20); do
+  id=$(pw-dump 2>/dev/null | python3 -I -c "import json,sys
+for o in json.load(sys.stdin):
+    n=o.get('info',{}).get('props',{}).get('node.name','')
+    if n.startswith('alsa_input.platform-avs_dmic'): print(o['id']); break" 2>/dev/null)
+  [ -n "$id" ] && { wpctl set-volume -l 3.0 "$id" "$GAIN"; exit 0; }
+  sleep 1
+done

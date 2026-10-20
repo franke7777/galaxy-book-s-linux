@@ -1,0 +1,17 @@
+#!/bin/sh
+# Brightness control for the Galaxy Book S: sends a command to books-backlightd
+# (no sudo needed for members of $BOOKS_GROUP, default wheel).
+#   books-backlight            -> print the target level in %
+#   books-backlight 40 | +2 | -2
+#   books-backlight watch      -> print every change (for waybar; polling instead of signals,
+#                                 a signal sent while waybar restarts killed the bar)
+if [ "$1" = watch ]; then
+  last=
+  while :; do
+    cur=$(cat /run/books-backlight/level 2>/dev/null)
+    [ "$cur" != "$last" ] && echo "$cur" && last=$cur
+    sleep 0.1
+  done
+fi
+[ -n "$1" ] && echo "$1" > /run/books-backlight/ctl
+[ -z "$1" ] && cat /run/books-backlight/level

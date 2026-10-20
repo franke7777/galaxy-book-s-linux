@@ -1,0 +1,15 @@
+[Unit]
+Description=Galaxy Book S: present the Lakefield GPU to Mesa as Elkhart Lake (Mesa does not know 8086:9840)
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# libdrm reads the PCI ID from sysfs; only this file is covered, the kernel still sees 9840
+ExecStart=/usr/bin/mount --bind /etc/books-gpu/device-id /sys/bus/pci/devices/0000:00:02.0/device
+ExecStop=/usr/bin/umount /sys/bus/pci/devices/0000:00:02.0/device
+
+[Install]
+WantedBy=sysinit.target

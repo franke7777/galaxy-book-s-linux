@@ -1,0 +1,15 @@
+#!/bin/sh
+# Lightweight battery/usage log for the Galaxy Book S: one CSV line per run
+# (timer every 5 min; it does not run during suspend, suspend drain is in
+# /var/log/books-sleep.log). Columns: time, status, percent, Wh, W,
+# brightness %, load 1 min, Wi-Fi state.
+B=/sys/class/power_supply/BAT1
+F=/var/log/books-battery.csv
+WLAN=${WLAN_IF:-wlp1s0}
+[ -s $F ] || echo "time,status,percent,wh,watt,brightness,load,wlan" > $F
+wh=$(awk '{printf "%.2f", $1/1e6}' $B/energy_now)
+w=$(awk '{printf "%.2f", $1/1e6}' $B/power_now)
+bright=$(cat /run/books-backlight/level 2>/dev/null || echo)
+load=$(cut -d' ' -f1 /proc/loadavg)
+wlan=$(cat /sys/class/net/$WLAN/operstate 2>/dev/null)
+echo "$(date '+%F %T'),$(cat $B/status),$(cat $B/capacity),$wh,$w,$bright,$load,$wlan" >> $F

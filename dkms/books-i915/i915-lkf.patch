@@ -1,0 +1,80 @@
+--- a/i915_pci.c
++++ b/i915_pci.c
+@@ -853,6 +853,7 @@
+ 	INTEL_CML_U_GT1_IDS(INTEL_VGA_DEVICE, &cml_gt1_info),
+ 	INTEL_CML_U_GT2_IDS(INTEL_VGA_DEVICE, &cml_gt2_info),
+ 	INTEL_ICL_IDS(INTEL_VGA_DEVICE, &icl_info),
++	INTEL_VGA_DEVICE(0x9840, &ehl_info), /* Lakefield (Galaxy Book S): GT only (EHL profile), display stays on simpledrm */
+ 	INTEL_EHL_IDS(INTEL_VGA_DEVICE, &ehl_info),
+ 	INTEL_JSL_IDS(INTEL_VGA_DEVICE, &jsl_info),
+ 	INTEL_TGL_IDS(INTEL_VGA_DEVICE, &tgl_info),
+--- a/i915_driver.c
++++ b/i915_driver.c
+@@ -512,7 +512,9 @@
+ 	if (ret)
+ 		goto err_perf;
+ 
+-	ret = aperture_remove_conflicting_pci_devices(pdev, dev_priv->drm.driver->name);
++	/* Lakefield: display stays on simpledrm (BOOTFB), do not kick it out */
++	ret = pdev->device == 0x9840 ? 0 :
++	      aperture_remove_conflicting_pci_devices(pdev, dev_priv->drm.driver->name);
+ 	if (ret)
+ 		goto err_ggtt;
+ 
+--- a/gt/intel_ggtt.c
++++ b/gt/intel_ggtt.c
+@@ -888,6 +888,15 @@
+ 		return ret;
+ 
+ 	mutex_init(&ggtt->error_mutex);
++	/* Lakefield: the BOOTFB (simpledrm) sits at GGTT 0, keep the firmware PTEs */
++	if (to_pci_dev(ggtt->vm.i915->drm.dev)->device == 0x9840) {
++		static struct drm_mm_node lkf_bootfb;
++		lkf_bootfb.start = 0;
++		lkf_bootfb.size = SZ_8M;
++		lkf_bootfb.color = I915_COLOR_UNEVICTABLE;
++		if (drm_mm_reserve_node(&ggtt->vm.mm, &lkf_bootfb))
++			drm_warn(&ggtt->vm.i915->drm, "LKF: BOOTFB reservation failed\n");
++	}
+ 	if (ggtt->mappable_end) {
+ 		/*
+ 		 * Reserve a mappable slot for our lockless error capture.
+--- a/gem/i915_gem_stolen.c
++++ b/gem/i915_gem_stolen.c
+@@ -546,6 +546,12 @@
+ 		return -ENOSPC;
+ 	}
+ 
++	/* Lakefield: stolen memory holds the simpledrm BOOTFB */
++	if (to_pci_dev(i915->drm.dev)->device == 0x9840) {
++		drm_notice(&i915->drm, "LKF: disabling use of stolen memory\n");
++		return -ENOSPC;
++	}
++
+ 	if (i915_vtd_active(i915) && GRAPHICS_VER(i915) < 8) {
+ 		drm_notice(&i915->drm,
+ 			   "%s, disabling use of stolen memory\n",
+--- a/intel_runtime_pm.c
++++ b/intel_runtime_pm.c
+@@ -486,7 +486,8 @@
+ 	 *  Let's keep i915 autosuspend control 'on' till we fix all known issue
+ 	 *  with lmem access in D3.
+ 	 */
+-	if (!IS_DGFX(i915))
++	/* Lakefield (9840): the display runs through simpledrm on the same device, D3 would freeze it */
++	if (!IS_DGFX(i915) && to_pci_dev(kdev)->device != 0x9840)
+ 		pm_runtime_allow(kdev);
+ 
+ 	/*
+--- a/i915_getparam.c
++++ b/i915_getparam.c
+@@ -32,7 +32,8 @@
+ 		/* Reject all old ums/dri params. */
+ 		return -ENODEV;
+ 	case I915_PARAM_CHIPSET_ID:
+-		value = pdev->device;
++		/* Lakefield (9840): report as Elkhart/Jasper Lake (4e71) to userspace (iHD/VA-API), matches the GT profile */
++		value = pdev->device == 0x9840 ? 0x4e71 : pdev->device;
+ 		break;
+ 	case I915_PARAM_REVISION:
+ 		value = pdev->revision;

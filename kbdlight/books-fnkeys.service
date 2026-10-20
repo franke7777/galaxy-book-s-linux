@@ -1,0 +1,10 @@
+[Unit]
+Description=Galaxy Book S: Fn+F9 (vendor page 0xFF7F) as keyboard backlight key via uinput
+
+[Service]
+ExecStart=/usr/local/bin/books-fnkeysd
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

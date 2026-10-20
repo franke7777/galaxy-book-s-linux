@@ -1,0 +1,21 @@
+#!/bin/bash
+# Kernel update for the Galaxy Book S. linux is on IgnorePkg in pacman.conf because root lives
+# on the eUFS and the patched UFS module (HS-G3) MUST be built for every new kernel.
+# Install to /usr/local/bin. Run as a normal user with sudo rights.
+set -e
+sudo pacman -Sy
+echo "Installed: $(pacman -Q linux)  |  available: $(pacman -Si linux | awk "/^Version/{print \$3}")"
+read -rp "Update the kernel now? [y/N] " a; [ "$a" = y ] || exit 0
+sudo pacman -S --noconfirm linux linux-headers
+k=$(pacman -Ql linux | grep -o "/usr/lib/modules/[^/]*/" | head -1 | xargs basename)
+ok=1
+for m in ufshcd_pci intel_ishtp_eclite hci_uart i915; do
+  p=$(modinfo -k "$k" -n $m 2>/dev/null || true)
+  case "$p" in *updates/dkms*) echo "OK      $m ($k)";; *) echo "MISSING $m ($k): $p"; [ $m = ufshcd_pci ] && ok=0;; esac
+done
+[ "$(modinfo -k "$k" -n i915 2>/dev/null | grep -c updates/dkms)" = 1 ] || echo "Note: books-i915 is missing for $k, Sway will fall back to Pixman (no GPU). Rebuild: sudo dkms install books-i915/1.0 -k $k"
+# /boot is mode 700, so read the initramfs with sudo
+sudo lsinitcpio /boot/initramfs-linux.img | grep -q "updates/dkms/ufshcd-pci" || { echo "MISSING ufshcd-pci in the initramfs"; ok=0; }
+if [ $ok = 1 ]; then echo "All good, safe to reboot."; else
+  echo "!!! DO NOT REBOOT: the UFS module (G3) is missing for $k. First run \"sudo dkms install books-ufs/1.0 -k $k\" and \"sudo mkinitcpio -P\"."
+  echo "!!! Emergency: boot the live stick (with the G3 module), mount the root partition, arch-chroot." ; exit 1; fi

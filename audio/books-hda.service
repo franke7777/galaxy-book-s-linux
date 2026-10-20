@@ -1,0 +1,14 @@
+# Only needed with dsp_driver=1 (plain HDA, no microphone). Not used with AVS.
+[Unit]
+Description=Galaxy Book S: bind the Lakefield HDA controller to snd_hda_intel (PCI ID missing in the driver)
+After=systemd-modules-load.service
+Before=sound.target
+
+[Service]
+Type=oneshot
+# driver_data 0x46202403 = AZX_DRIVER_SKL | AZX_DCAPS_INTEL_SKYLAKE (kernel 7.2)
+ExecStart=/bin/sh -c 'modprobe snd_hda_intel && echo "8086 98c8 ffffffff ffffffff 0 0 46202403" > /sys/bus/pci/drivers/snd_hda_intel/new_id || true'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

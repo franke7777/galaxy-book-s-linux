@@ -1,0 +1,38 @@
+--- a/drivers/ufs/host/ufshcd-pci.c
++++ b/drivers/ufs/host/ufshcd-pci.c
+@@ -152,6 +152,14 @@
+ 	return ret;
+ }
+ 
++/* Book S test: cap LKF HS gear / rate (0 = unchanged) */
++static unsigned int lkf_max_gear;
++module_param(lkf_max_gear, uint, 0444);
++MODULE_PARM_DESC(lkf_max_gear, "LKF: max HS gear (0 = no limit)");
++static unsigned int lkf_hs_rate;
++module_param(lkf_hs_rate, uint, 0444);
++MODULE_PARM_DESC(lkf_hs_rate, "LKF: HS rate 1=A 2=B (0 = unchanged)");
++
+ static int ufs_intel_lkf_pwr_change_notify(struct ufs_hba *hba,
+ 				enum ufs_notify_change_status status,
+ 				const struct ufs_pa_layer_attr *dev_max_params,
+@@ -165,6 +173,20 @@
+ 		    (hba->pwr_info.lane_rx != 2 || hba->pwr_info.lane_tx != 2))
+ 			ufs_intel_set_lanes(hba, 2);
+ 		memcpy(dev_req_params, dev_max_params, sizeof(*dev_req_params));
++		if (ufshcd_is_hs_mode(dev_max_params)) {
++			if (lkf_max_gear) {
++				dev_req_params->gear_rx = min(dev_req_params->gear_rx, lkf_max_gear);
++				dev_req_params->gear_tx = min(dev_req_params->gear_tx, lkf_max_gear);
++			}
++			if (lkf_hs_rate == 1 || lkf_hs_rate == 2)
++				dev_req_params->hs_rate = lkf_hs_rate;
++		}
++		dev_info(hba->dev, "LKF pwr: max g%u/%u l%u/%u m%u/%u r%u -> req g%u/%u l%u/%u r%u\n",
++			 dev_max_params->gear_rx, dev_max_params->gear_tx,
++			 dev_max_params->lane_rx, dev_max_params->lane_tx,
++			 dev_max_params->pwr_rx, dev_max_params->pwr_tx, dev_max_params->hs_rate,
++			 dev_req_params->gear_rx, dev_req_params->gear_tx,
++			 dev_req_params->lane_rx, dev_req_params->lane_tx, dev_req_params->hs_rate);
+ 		break;
+ 	case POST_CHANGE:
+ 		if (ufshcd_is_hs_mode(dev_req_params)) {

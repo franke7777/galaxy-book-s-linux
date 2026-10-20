@@ -1,0 +1,7 @@
+#!/bin/sh
+# Toggle the keyboard backlight and show an on-screen indicator (books-kbdlight + swayosd)
+#   kbd-osd | kbd-osd 0..3
+/usr/local/bin/books-kbdlight "$1"
+lvl=$(cat /sys/class/leds/samsung-galaxybook::kbd_backlight/brightness)
+if [ "$lvl" = 0 ]; then txt=Off; else txt="Level $lvl"; fi
+swayosd-client --custom-icon keyboard-brightness-symbolic --custom-progress "$(awk "BEGIN{print $lvl/3}")" --custom-progress-text "$txt"

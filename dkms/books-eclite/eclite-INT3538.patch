@@ -1,0 +1,12 @@
+--- a/drivers/platform/x86/intel/ishtp_eclite.c	2026-10-09 12:44:29.391789131 +0200
++++ b/drivers/platform/x86/intel/ishtp_eclite.c	2026-10-09 12:44:29.392793598 +0200
+@@ -290,6 +290,9 @@
+ 
+ 	/* Find ECLite device and save reference */
+ 	adev = acpi_dev_get_first_match_dev("INTC1035", NULL, -1);
++	/* Lakefield (e.g. Samsung Galaxy Book S 767XCL) names it INT3538 */
++	if (!adev)
++		adev = acpi_dev_get_first_match_dev("INT3538", NULL, -1);
+ 	if (!adev) {
+ 		dev_err(cl_data_to_dev(opr_dev), "eclite ACPI device not found\n");
+ 		return -ENODEV;

@@ -1,0 +1,14 @@
+#!/bin/sh
+# /usr/lib/systemd/system-sleep/books-sleeplog
+# Log the battery level before/after every suspend (to measure s2idle drain;
+# intel_pmc_core does not know Lakefield, the S0ix residency counter stays 0).
+# Right after resume eclite still reports the old value -> read again 60 s later
+# via a transient timer unit (systemd kills background processes of sleep hooks).
+B=/sys/class/power_supply/BAT1
+log() { echo "$(date '+%F %T') $1 $(cat $B/energy_now) $(cat $B/capacity)% $(cat $B/status)" >> /var/log/books-sleep.log; }
+case "$1" in
+  pre) log pre ;;
+  post) systemd-run --quiet --on-active=60 --unit=books-sleeplog-post-$$ "$0" late ;;
+  late) log post ;;
+esac
+exit 0

@@ -1,0 +1,12 @@
+[Unit]
+Description=Galaxy Book S: display brightness (GPU PWM register, smooth gliding)
+
+[Service]
+ExecStart=/usr/local/bin/books-backlightd
+RuntimeDirectory=books-backlight
+RuntimeDirectoryMode=0755
+Restart=on-failure
+# Environment=BOOKS_GROUP=wheel
+
+[Install]
+WantedBy=multi-user.target

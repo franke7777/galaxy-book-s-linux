@@ -1,0 +1,13 @@
+[Unit]
+Description=Galaxy Book S: keyboard backlight (reload samsung_galaxybook once the ISH is up)
+After=books-ish.service
+Wants=books-ish.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/books-kbdlight init
+ExecStop=/usr/local/bin/books-kbdlight save
+
+[Install]
+WantedBy=multi-user.target

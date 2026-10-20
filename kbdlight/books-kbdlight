@@ -1,0 +1,33 @@
+#!/bin/sh
+# Keyboard backlight of the Galaxy Book S (samsung_galaxybook via ISH/eclite)
+#   books-kbdlight init   -> reload the driver until the LED exists, restore the level (service, root)
+#   books-kbdlight save   -> save the level (service on stop, root)
+#   books-kbdlight        -> next level 0 -> 1 -> 2 -> 3 -> 0
+#   books-kbdlight 0..3   -> set level
+# Members of $BOOKS_GROUP (default wheel) may change the level without sudo.
+L=/sys/class/leds/samsung-galaxybook::kbd_backlight
+S=/var/lib/books-kbdlight/level
+G=${BOOKS_GROUP:-wheel}
+case "$1" in
+  init)
+    # At boot the EC path is not ready yet (CSFI -> 0xff), then the LED is missing
+    for i in $(seq 1 30); do
+      modprobe -r samsung_galaxybook 2>/dev/null
+      modprobe samsung_galaxybook
+      [ -e "$L/brightness" ] && break
+      sleep 2
+    done
+    [ -e "$L/brightness" ] || { echo "kbd_backlight not present" >&2; exit 1; }
+    chgrp "$G" "$L/brightness" && chmod g+w "$L/brightness"
+    cat "$S" 2>/dev/null > "$L/brightness" || echo 2 > "$L/brightness"
+    ;;
+  save)
+    mkdir -p "${S%/*}" && cat "$L/brightness" > "$S"
+    ;;
+  [0-3])
+    echo "$1" > "$L/brightness"
+    ;;
+  "")
+    echo $(( ($(cat "$L/brightness") + 1) % 4 )) > "$L/brightness"
+    ;;
+esac

@@ -1,0 +1,11 @@
+--- a/drivers/bluetooth/hci_intel.c	2026-10-09 13:11:15.717223760 +0200
++++ b/drivers/bluetooth/hci_intel.c	2026-10-09 13:11:15.718151136 +0200
+@@ -1310,6 +1310,8 @@
+ 		return -ENOMEM;
+ 
+ 	hu->serdev = serdev;
++	/* hci_serdev.c looks the hci_uart up through the drvdata */
++	serdev_device_set_drvdata(serdev, hu);
+ 
+ 	/* The port is not open yet (hci_uart_register_device() opens it), so
+ 	 * only the ACPI properties and the reset GPIO can be used here.

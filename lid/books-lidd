@@ -1,0 +1,59 @@
+#!/usr/bin/python3 -I
+# Lid switch for the Galaxy Book S (Lakefield): ACPI LID0 always reports "open",
+# the real lid is the ISH sensor "Lid Closed Detection Sensor"
+# (HID sensor 0x2000E1, hid-sensor-custom). This daemon reads its data stream and
+# mirrors it to a virtual switch (uinput, SW_LID). logind treats it like a normal lid:
+# HandleLidSwitch, inhibitors and so on.
+# Record: 16 byte header (usage u32, timestamp u64, length u32), then 29 bytes,
+# byte 26 = 1 closed / 0 open (measured on the device over several cycles).
+import fcntl, glob, os, select, struct, time
+
+S = glob.glob("/sys/bus/platform/devices/HID-SENSOR-2000e1.*")[0]
+DEV = "/dev/" + os.path.basename(S)
+HDR = struct.Struct("<IQI")
+EV_SYN, EV_SW, SW_LID = 0, 5, 0
+UI_SET_EVBIT, UI_SET_SWBIT = 0x40045564, 0x4004556D
+UI_DEV_SETUP, UI_DEV_CREATE = 0x405C5503, 0x5501
+
+ui = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+fcntl.ioctl(ui, UI_SET_EVBIT, EV_SW)
+fcntl.ioctl(ui, UI_SET_SWBIT, SW_LID)
+# input_id (bustype, vendor, product, version) + name[80] + ff_effects_max
+fcntl.ioctl(ui, UI_DEV_SETUP, struct.pack("<HHHH80sI", 0x06, 0x144D, 0x2E1, 1, b"Book S Lid Switch", 0))
+fcntl.ioctl(ui, UI_DEV_CREATE)
+
+def emit(closed):
+    t = time.time()
+    s, us = int(t), int((t % 1) * 1e6)
+    os.write(ui, struct.pack("<qqHHi", s, us, EV_SW, SW_LID, closed)
+                 + struct.pack("<qqHHi", s, us, EV_SYN, 0, 0))
+    print("closed" if closed else "open", flush=True)
+
+def enable():
+    # writing 1 while already enabled = EINVAL, so toggle off and on again
+    for v in ("1", "0", "1"):
+        try:
+            with open(S + "/enable_sensor", "w") as f:
+                f.write(v)
+            if v == "1":
+                return
+        except OSError:
+            pass
+
+fd = os.open(DEV, os.O_RDONLY)
+enable()
+buf, state = b"", None
+while True:
+    # after resume the sensor may stall: re-enable it when no data arrives
+    if not select.select([fd], [], [], 5)[0]:
+        enable()
+        continue
+    buf += os.read(fd, 4096)
+    while len(buf) >= HDR.size:
+        _, _, n = HDR.unpack_from(buf)
+        if len(buf) < HDR.size + n:
+            break
+        d, buf = buf[HDR.size:HDR.size + n], buf[HDR.size + n:]
+        if n > 26 and d[26] != state:
+            state = d[26]
+            emit(state)

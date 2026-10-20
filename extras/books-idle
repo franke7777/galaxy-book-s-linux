@@ -1,0 +1,45 @@
+#!/bin/sh
+# Idle handling for the Galaxy Book S (called by swayidle, install to ~/.local/bin)
+#   books-idle dim   -> after 5 min: screen off, backlight to minimum, keyboard light off
+#   books-idle wake  -> on input: everything back as before
+#   books-idle rest  -> after 20 min: hibernate on battery; on AC wait until the charger is
+#                       unplugged (otherwise it would stay awake after unplugging)
+#   books-idle stop  -> on input: cancel the wait
+# s2idle saves almost nothing on Lakefield (see docs/power.md), hence hibernate.
+R=${XDG_RUNTIME_DIR:-/tmp}/books-idle
+KBD="/sys/class/leds/samsung-galaxybook::kbd_backlight/brightness"
+ADP=/sys/class/power_supply/ADP1/online
+mkdir -p "$R"
+case "$1" in
+  dim)
+    /usr/local/bin/books-backlight > "$R/level"
+    cat "$KBD" > "$R/kbd" 2>/dev/null
+    /usr/local/bin/books-backlight 15
+    echo 0 > "$KBD" 2>/dev/null
+    swaymsg -q 'output * power off'
+    ;;
+  wake)
+    # simpledrm swallows the first "power on" after turning the output off
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      swaymsg -q 'output * power on'
+      sleep 0.2
+      swaymsg -t get_outputs | grep -q '"power": true' && break
+    done
+    [ -s "$R/level" ] && /usr/local/bin/books-backlight "$(cat "$R/level")"
+    [ -s "$R/kbd" ] && cat "$R/kbd" > "$KBD" 2>/dev/null
+    rm -f "$R/level" "$R/kbd"
+    ;;
+  rest)
+    "$0" stop
+    (
+      while [ "$(cat "$ADP")" = 1 ]; do sleep 30; done
+      rm -f "$R/pid"
+      systemctl hibernate
+    ) &
+    echo $! > "$R/pid"
+    ;;
+  stop)
+    [ -s "$R/pid" ] && kill "$(cat "$R/pid")" 2>/dev/null
+    rm -f "$R/pid"
+    ;;
+esac

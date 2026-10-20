@@ -1,0 +1,6 @@
+[Unit]
+Description=Galaxy Book S: battery/usage log (one line)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/books-batlog

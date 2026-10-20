@@ -1,0 +1,37 @@
+--- a/sound/soc/intel/avs/loader.c
++++ b/sound/soc/intel/avs/loader.c
+@@ -403,9 +403,31 @@
+ 
+ 	/* transfer firmware */
+ 	snd_hdac_dsp_trigger(hstream, true);
+-	ret = snd_hdac_adsp_readl_poll(adev, AVS_FW_REG_STATUS(adev), reg,
+-				       (reg & AVS_ROM_STS_MASK) == APL_ROM_FW_ENTERED,
+-				       AVS_FW_INIT_POLLING_US, AVS_FW_INIT_TIMEOUT_US);
++	{
++		/* Lakefield test: log ROM state changes, wait up to 30 s */
++		unsigned int last = ~0u, lec, t;
++
++		ret = -ETIMEDOUT;
++		for (t = 0; t < 30000; t++) {
++			reg = snd_hdac_adsp_readl(adev, AVS_FW_REG_STATUS(adev));
++			if (reg != last) {
++				lec = snd_hdac_adsp_readl(adev, AVS_FW_REG_ERROR(adev));
++				dev_info(adev->dev, "LKF-Test t=%u ms FSR=0x%08x lec=0x%08x dma_pos=%u\n",
++					 t, reg, lec, snd_hdac_stream_get_pos_posbuf(hstream));
++				last = reg;
++			}
++			if ((reg & AVS_ROM_STS_MASK) == APL_ROM_FW_ENTERED) {
++				ret = 0;
++				break;
++			}
++			if (reg & BIT(31))
++				break;
++			usleep_range(1000, 1100);
++		}
++		dev_info(adev->dev, "LKF-Test Ende t=%u ms FSR=0x%08x lec=0x%08x LPIB=%u\n", t, reg,
++			 snd_hdac_adsp_readl(adev, AVS_FW_REG_ERROR(adev)),
++			 snd_hdac_stream_readl(hstream, SD_LPIB));
++	}
+ 	snd_hdac_dsp_trigger(hstream, false);
+ 	if (ret < 0) {
+ 		dev_err(adev->dev, "transfer fw failed: %d, status: 0x%08x, lec: 0x%08x\n",

@@ -1,0 +1,14 @@
+[Unit]
+Description=Galaxy Book S: turn on the speaker amplifiers (sequence derived from the Windows driver)
+After=sound.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Wait for the codec node of the ALC298 card (snd_hda_intel: hwC0D0, AVS: hwC1D0)
+ExecStartPre=/bin/sh -c 'for i in $(seq 40); do grep -qs ALC298 /proc/asound/card*/codec#0 && exit 0; sleep 0.5; done; exit 1'
+ExecStart=/usr/local/bin/books-amp
+ExecStop=/usr/local/bin/books-amp off
+
+[Install]
+WantedBy=multi-user.target

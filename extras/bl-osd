@@ -1,0 +1,7 @@
+#!/bin/sh
+# Change brightness and show an on-screen indicator (books-backlight + swayosd)
+#   bl-osd +2 | -2 | 40
+/usr/local/bin/books-backlight "$1"
+sleep 0.05
+lvl=$(/usr/local/bin/books-backlight)
+swayosd-client --custom-icon display-brightness-symbolic --custom-progress "$(awk "BEGIN{print $lvl/100}")" --custom-progress-text "${lvl}%"

@@ -1,0 +1,33 @@
+#!/bin/bash
+# Galaxy Book S: lid closed on battery -> lock, keyboard light off, hibernate after WAIT seconds.
+# There is no wake timer during suspend (acpi-tad without alarm), so the machine stays awake meanwhile.
+# On AC, logind takes over (HandleLidSwitchExternalPower=suspend).
+WAIT=${BOOKS_LID_WAIT:-1200}
+KBD="/sys/class/leds/samsung-galaxybook::kbd_backlight/brightness"
+ADP=/sys/class/power_supply/ADP1/online
+
+now() { cut -d. -f1 /proc/uptime; }   # counts awake time only
+lid() { busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
+          org.freedesktop.login1.Manager LidClosed 2>/dev/null | cut -d' ' -f2; }
+
+since=0; kbd=""
+while sleep 10; do
+  if [ "$(lid)" = true ]; then
+    if [ "$since" -eq 0 ]; then
+      since=$(now)
+      loginctl lock-sessions
+      kbd=$(cat "$KBD" 2>/dev/null); echo 0 > "$KBD" 2>/dev/null
+      echo "closed, hibernating in $((WAIT / 60)) min (if on battery)"
+    fi
+    if [ "$(cat "$ADP")" = 1 ]; then
+      since=$(now)   # the countdown does not run on AC
+    elif [ $(( $(now) - since )) -ge "$WAIT" ]; then
+      echo "hibernate"
+      since=$(now)   # if still closed after resume: new countdown
+      systemctl hibernate
+    fi
+  elif [ "$since" -ne 0 ]; then
+    [ -n "$kbd" ] && echo "$kbd" > "$KBD" 2>/dev/null
+    since=0; echo "open"
+  fi
+done

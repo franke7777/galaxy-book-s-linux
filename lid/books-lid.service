@@ -1,0 +1,12 @@
+[Unit]
+Description=Galaxy Book S: lid switch from the ISH sensor (ACPI LID0 reports nothing)
+After=books-ish.service
+Wants=books-ish.service
+
+[Service]
+ExecStart=/usr/local/bin/books-lidd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

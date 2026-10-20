@@ -1,0 +1,86 @@
+#!/usr/bin/python3 -I
+# Brightness for the Galaxy Book S (Lakefield) without an i915 display driver: a daemon that owns
+# the GPU PWM register (BXT_BLC_PWM_DUTY1) and glides smoothly to the target value.
+# Commands arrive line by line through the FIFO /run/books-backlight/ctl:
+#   40 | +2 | -2 | restore
+# The current target level is published in /run/books-backlight/level (for waybar).
+# Environment: BOOKS_GROUP (default wheel) = group allowed to write the FIFO.
+import ctypes, grp, mmap, os, select, time
+
+BAR0 = "/sys/bus/pci/devices/0000:00:02.0/resource0"
+CTL, FREQ, DUTY = 0xC8250, 0xC8254, 0xC8258
+RUN = "/run/books-backlight"
+STATE = "/var/lib/books-backlight/level"
+MIN = 15  # never fully black (3 % was practically off)
+FRAME = 1 / 60
+EASE = 0.18  # fraction of the remaining distance per frame
+
+fd = os.open(BAR0, os.O_RDWR | os.O_SYNC)
+mm = mmap.mmap(fd, 0x100000)
+reg = lambda o: ctypes.c_uint32.from_buffer(mm, o)
+freq = reg(FREQ).value
+
+# perceived brightness ~ quadratic: level p% -> duty (p/100)^2
+def duty(p):
+    return max(1, round(freq * (p / 100) ** 2))
+
+def publish(p):
+    with open(f"{RUN}/level.tmp", "w") as f:
+        f.write(f"{p}\n")
+    os.replace(f"{RUN}/level.tmp", f"{RUN}/level")
+
+def save(p):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    with open(STATE, "w") as f:
+        f.write(f"{p}\n")
+
+def saved():
+    try:
+        return int(open(STATE).read())
+    except (OSError, ValueError):
+        return 70
+
+fifo = f"{RUN}/ctl"
+if not os.path.exists(fifo):
+    os.mkfifo(fifo)
+try:
+    gid = grp.getgrnam(os.environ.get("BOOKS_GROUP", "wheel")).gr_gid
+except KeyError:
+    gid = 0
+os.chown(fifo, 0, gid)
+os.chmod(fifo, 0o620)
+ctl = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)  # RDWR: no EOF without a writer
+
+cur = (reg(DUTY).value / freq) ** 0.5 * 100
+target = max(MIN, min(100, saved()))
+publish(target)
+dirty_since = None
+buf = b""
+
+while True:
+    moving = abs(target - cur) > 0.05
+    timeout = FRAME if moving else (1 if dirty_since else None)
+    if select.select([ctl], [], [], timeout)[0]:
+        buf += os.read(ctl, 4096)
+        *lines, buf = buf.split(b"\n")
+        for cmd in (l.decode().strip() for l in lines):
+            try:
+                if cmd == "restore":
+                    t = saved()
+                elif cmd[:1] in "+-":
+                    t = target + int(cmd)
+                else:
+                    t = int(cmd)
+            except ValueError:
+                continue
+            target = max(MIN, min(100, t))
+            publish(target)
+            dirty_since = time.monotonic()
+    if moving:
+        cur += (target - cur) * EASE
+        if abs(target - cur) <= 0.05:
+            cur = target
+        reg(DUTY).value = duty(cur)
+    if dirty_since and time.monotonic() - dirty_since > 1:
+        save(target)
+        dirty_since = None

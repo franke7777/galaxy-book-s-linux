@@ -1,0 +1,14 @@
+[Unit]
+Description=Galaxy Book S: enable the ISH (Lakefield 8086:98fc) and the EC-Lite battery
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/modprobe intel_ish_ipc
+# intel_ish_ipc has no entry for the Lakefield ISH; add the ID at runtime
+ExecStart=/bin/sh -c "lspci -n -s 00:12.0 -k | grep -q intel_ish_ipc || echo 8086 98fc > /sys/bus/pci/drivers/intel_ish_ipc/new_id"
+ExecStart=/usr/sbin/modprobe intel_ishtp_eclite
+
+[Install]
+WantedBy=multi-user.target

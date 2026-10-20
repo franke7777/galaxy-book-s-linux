@@ -1,0 +1,36 @@
+# build artifacts
+*.o
+*.ko
+*.ko.zst
+*.mod
+*.mod.c
+*.cmd
+.*.cmd
+modules.order
+Module.symvers
+.tmp_versions/
+__pycache__/
+*.pyc
+gltest
+# fetched kernel sources inside DKMS packages
+dkms/*/*.c
+dkms/*/*.h
+dkms/*/Makefile.kernel
+dkms/books-i915/i915/
+# vendor packages and firmware: never commit these
+*.cab
+*.sys
+*.inf
+*.cat
+*.bin
+*.sfi
+*.aiqb
+*.cpf
+fw/
+fw-*/
+firmware/
+Fw/
+lkf-cam/
+lkf-sst/
+# logs
+*.log

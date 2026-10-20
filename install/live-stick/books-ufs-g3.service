@@ -1,0 +1,18 @@
+# Live stick only (e.g. Ubuntu with persistence): load the G3-capped UFS module early.
+# Requires the kernel command line modprobe.blacklist=ufshcd_pci rd.driver.blacklist=ufshcd_pci
+# so the stock module never touches the link, and the built module copied to
+# /lib/modules/$(uname -r)/updates/ufshcd-pci-g3.ko
+[Unit]
+Description=Galaxy Book S: internal eUFS with HS-G3 cap
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/modprobe ufshcd_core
+ExecStart=/usr/sbin/insmod /lib/modules/%v/updates/ufshcd-pci-g3.ko lkf_max_gear=3
+
+[Install]
+WantedBy=sysinit.target

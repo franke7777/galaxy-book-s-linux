@@ -1,0 +1,58 @@
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -489,6 +489,10 @@
+ 	writel(val, isp->base + BUTTRESS_REG_BTRS_CTRL);
+ }
+ 
++static int lkf_ver = IPU6_VER_6SE;
++module_param(lkf_ver, int, 0444);
++MODULE_PARM_DESC(lkf_ver, "Lakefield test: 1=IPU6 TGL, 3=IPU6SE JSL, 5=IPU6EP ADL");
++
+ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ {
+ 	struct ipu6_buttress_ctrl *isys_ctrl = NULL, *psys_ctrl = NULL;
+@@ -547,6 +551,20 @@
+ 		isp->hw_ver = IPU6_VER_6EP_MTL;
+ 		isp->cpd_fw_name = IPU6EPMTL_FIRMWARE_NAME;
+ 		break;
++	case 0x9830:
++		dev_info(dev, "Lakefield test: profile lkf_ver=%d\n", lkf_ver);
++		isp->hw_ver = lkf_ver;
++		if (lkf_ver == IPU6_VER_6SE) {
++			isp->cpd_fw_name = IPU6SE_FIRMWARE_NAME;
++			isp->cpd_metadata_cmpnt_size =
++				sizeof(struct ipu6se_cpd_metadata_cmpnt);
++		} else if (lkf_ver == IPU6_VER_6EP) {
++			isp->cpd_fw_name = IPU6EP_FIRMWARE_NAME;
++		} else {
++			isp->hw_ver = IPU6_VER_6;
++			isp->cpd_fw_name = IPU6_FIRMWARE_NAME;
++		}
++		break;
+ 	default:
+ 		return dev_err_probe(dev, -ENODEV,
+ 				     "Unsupported IPU6 device %x\n",
+@@ -811,7 +829,13 @@
+ 	RUNTIME_PM_OPS(&ipu6_suspend, &ipu6_runtime_resume, NULL)
+ };
+ 
+-MODULE_DEVICE_TABLE(pci, ipu6_pci_tbl);
++/* Lakefield test: 9830 only, profile chosen by module parameter */
++#define PCI_DEVICE_ID_INTEL_IPU_LKF	0x9830
++static const struct pci_device_id ipu6_lkf_tbl[] = {
++	{ PCI_VDEVICE(INTEL, PCI_DEVICE_ID_INTEL_IPU_LKF) },
++	{ }
++};
++MODULE_DEVICE_TABLE(pci, ipu6_lkf_tbl);
+ 
+ static const struct pci_error_handlers pci_err_handlers = {
+ 	.reset_prepare = ipu6_pci_reset_prepare,
+@@ -820,7 +844,7 @@
+ 
+ static struct pci_driver ipu6_pci_driver = {
+ 	.name = IPU6_NAME,
+-	.id_table = ipu6_pci_tbl,
++	.id_table = ipu6_lkf_tbl,
+ 	.probe = ipu6_pci_probe,
+ 	.remove = ipu6_pci_remove,
+ 	.driver = {

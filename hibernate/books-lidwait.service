@@ -1,0 +1,11 @@
+[Unit]
+Description=Galaxy Book S: lid closed on battery -> hibernate after 20 min
+After=books-lid.service systemd-logind.service
+
+[Service]
+ExecStart=/usr/local/bin/books-lidwait
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

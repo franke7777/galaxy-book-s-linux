@@ -1,0 +1,20 @@
+--- a/i915_pci.c
++++ b/i915_pci.c
+@@ -853,6 +853,7 @@
+ 	INTEL_CML_U_GT1_IDS(INTEL_VGA_DEVICE, &cml_gt1_info),
+ 	INTEL_CML_U_GT2_IDS(INTEL_VGA_DEVICE, &cml_gt2_info),
+ 	INTEL_ICL_IDS(INTEL_VGA_DEVICE, &icl_info),
++	INTEL_VGA_DEVICE(0x9840, &icl_info), /* Lakefield (Galaxy Book S): GT as Ice Lake */
+ 	INTEL_EHL_IDS(INTEL_VGA_DEVICE, &ehl_info),
+ 	INTEL_JSL_IDS(INTEL_VGA_DEVICE, &jsl_info),
+ 	INTEL_TGL_IDS(INTEL_VGA_DEVICE, &tgl_info),
+--- a/display/intel_display_device.c
++++ b/display/intel_display_device.c
+@@ -1481,6 +1481,7 @@
+ 	INTEL_WHL_IDS(INTEL_DISPLAY_DEVICE, &cfl_desc),
+ 	INTEL_CML_IDS(INTEL_DISPLAY_DEVICE, &cml_desc),
+ 	INTEL_ICL_IDS(INTEL_DISPLAY_DEVICE, &icl_desc),
++	INTEL_DISPLAY_DEVICE(0x9840, &icl_desc), /* Lakefield: display as Ice Lake (DEAD END, freezes the machine) */
+ 	INTEL_EHL_IDS(INTEL_DISPLAY_DEVICE, &ehl_desc),
+ 	INTEL_JSL_IDS(INTEL_DISPLAY_DEVICE, &jsl_desc),
+ 	INTEL_TGL_IDS(INTEL_DISPLAY_DEVICE, &tgl_desc),
