@@ -43,6 +43,27 @@ With G3 as boot-time default on the live stick: module loaded after 15.7 s (273 
 
 [../dkms/books-ufs/ufs-lkf-g3.patch](../dkms/books-ufs/ufs-lkf-g3.patch), for 7.2 and later (since 7.0 `pwr_change_notify` only gets `dev_req_params`). It adds `lkf_max_gear` (default 3, 0 = no limit) and clamps `gear_rx`/`gear_tx` in `ufs_intel_lkf_pwr_change_notify()` during `PRE_CHANGE` when switching to an HS mode. No module option needed.
 
+## Runtime PM: keep the link in Hibern8 (rpm_lvl 3)
+
+With the HS-G3 cap the disk survives load, but one more failure showed up after about 3 hours of normal use (on AC, no system sleep):
+
+```
+ufshcd 0000:00:12.5: link startup failed 1
+ufs_device_wlun 0:0:0:49488: ufshcd_wl_runtime_resume failed: 1
+```
+
+The host reset failed five times, ext4 aborted its journal and the root disk was gone until a reboot. Running programs kept working from RAM, anything that needed the disk hung.
+
+Cause: runtime PM. The default `rpm_lvl = 5` powers the device down **and turns the link off**. Bringing the link back up after runtime suspend is exactly the weak spot of this controller (same family of failures as the G4 problem).
+
+Fix: `rpm_lvl = 3` (device sleep, link stays in Hibern8, never torn down), set by a udev rule: [../ufs-rpm/99-books-ufs-rpm.rules](../ufs-rpm/99-books-ufs-rpm.rules).
+
+```
+cat /sys/bus/pci/devices/0000:00:12.5/rpm_lvl   # should print 3
+```
+
+Since the rule went in (30.10.2026) there has been no further UFS error or freeze over several days of daily use. The two remaining boot messages are harmless: `module verification failed` (the patched module is unsigned) and `Failed to register UFS RPMB device 0` (RPMB is not used).
+
 ## Kernel version trap
 
 Commit e72323f3b09f "Configure only active lanes during link" (03/2026) makes the link startup on Intel `ufshcd-pci` always fail with `-ENOLINK`. The fix "Skip link param validation when lanes_per_direction is unset" is in 7.2. Do not use 7.1 on this machine.

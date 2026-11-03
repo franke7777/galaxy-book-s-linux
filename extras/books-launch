@@ -1,0 +1,27 @@
+#!/bin/bash
+# Launch an app from a Sway key binding and give instant feedback.
+# On this slow CPU Firefox/Thunderbird take a few seconds to show a window;
+# without feedback it feels like the key press was lost.
+#
+# Usage: books-launch "Name" app_id [--focus] command...
+#   --focus: if a window with app_id already exists, just focus it (good for Thunderbird)
+# Shows "Name startet …" via mako/notify-send and dismisses it as soon as a NEW
+# window with that app_id appears (max. 20 s).
+#
+# Sway example (Sway does not have ~/.local/bin in PATH, use the full path):
+#   bindsym $mod+b exec ~/.local/bin/books-launch Firefox firefox firefox --browser
+#   bindsym $mod+m exec ~/.local/bin/books-launch Thunderbird org.mozilla.Thunderbird --focus thunderbird
+name=$1; appid=$2; shift 2
+focus=0; [ "$1" = "--focus" ] && { focus=1; shift; }
+count() { swaymsg -t get_tree | grep -c "\"app_id\": \"$appid\""; }
+before=$(count)
+if [ "$focus" = 1 ] && [ "$before" -gt 0 ]; then
+  exec swaymsg "[app_id=\"$appid\"] focus" >/dev/null
+fi
+id=$(notify-send -p -a books-launch -i "$appid" -t 20000 "$name startet …" "einen Moment")
+"$@" >/dev/null 2>&1 &
+for _ in $(seq 1 80); do
+  sleep 0.25
+  [ "$(count)" -gt "$before" ] && break
+done
+makoctl dismiss -n "$id" 2>/dev/null

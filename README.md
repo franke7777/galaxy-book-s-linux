@@ -22,7 +22,7 @@ It was a lot of work, and honestly a lot of fun. If you own a Galaxy Book S and 
 
 | Component | Status | How | Details |
 |---|---|---|---|
-| Internal eUFS (root disk) | Works | `ufshcd-pci` patched to cap the link at HS-G3 (G4 breaks under load), DKMS + initramfs | [docs/ufs.md](docs/ufs.md), [dkms/](dkms/README.md) |
+| Internal eUFS (root disk) | Works | `ufshcd-pci` patched to cap the link at HS-G3 (G4 breaks under load), DKMS + initramfs, runtime PM kept at `rpm_lvl 3` (link stays in Hibern8) | [docs/ufs.md](docs/ufs.md), [dkms/](dkms/README.md), [ufs-rpm/](ufs-rpm/99-books-ufs-rpm.rules) |
 | Boot loader | Works | GRUB. systemd-boot shows its menu, then a black screen | [install/](install/README.md) |
 | Battery / AC adapter | Works | ISH PCI ID `98fc` via `new_id` + `INT3538` added to `intel_ishtp_eclite` | [battery/](battery/README.md) |
 | Bluetooth | Works | `hci_intel` serdev series for the CcP controller (upstream patches by Cai Yu) + one missing `set_drvdata` | [dkms/](dkms/README.md) |

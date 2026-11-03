@@ -1,0 +1,8 @@
+# Galaxy Book S (Lakefield): keep the eUFS link up during runtime PM.
+# Default rpm_lvl 5 = device powered down AND link off. Restarting the link after
+# runtime suspend failed after ~3 h uptime ("link startup failed",
+# "ufshcd_wl_runtime_resume failed"), the root disk vanished until reboot.
+# rpm_lvl 3 = device sleep + link in Hibern8, the link is never torn down.
+# Install: copy to /etc/udev/rules.d/, then reboot or run
+#   echo 3 | sudo tee /sys/bus/pci/devices/0000:00:12.5/rpm_lvl
+ACTION=="add|bind", SUBSYSTEM=="pci", KERNEL=="0000:00:12.5", ATTR{rpm_lvl}="3"
